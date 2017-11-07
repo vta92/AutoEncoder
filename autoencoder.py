@@ -106,7 +106,7 @@ for epoch in range (epochs):
             num_users_who_rated += 1.0
             optimizer.step() 
             #difference between backward() and step/opt: backward decides the direction of change, opt will determine the magnitude
-    print('epoch ' + str(epoch) +': ' + str(loss/num_users_who_rated))
+    print('epoch ' + str(epoch) +': ' + str(training_loss/num_users_who_rated))
     #we want the loss to be less than 1, so our error is less than 1 star rating
 
 
