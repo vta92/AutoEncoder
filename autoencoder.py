@@ -68,14 +68,15 @@ class auto_encoder(nn.Module):
     
     def prop_forward (self,vector):
         vector = self.activation_func(self.vh1(vector))
-        vector = self.activation_func(self.h1h2(xformation))
-        vector = self.activation_func(self.h2h3(xformation))
-        vector = self.h3o(xformation) #hope that the output matches the input
+        vector = self.activation_func(self.h1h2(vector))
+        vector = self.activation_func(self.h2h3(vector))
+        vector = self.h3o(vector) #hope that the output matches the input
         return vector
 
 '''architecture of AE defined here'''
 hid1_size = 20
-hid2_size = 10    
+hid2_size = 10
+epochs = 100    
 conditions = [total_movies, hid1_size, hid2_size]
 
 auto_encoder = auto_encoder(int(conditions[0]), conditions[1], conditions[2])
@@ -83,9 +84,30 @@ auto_encoder = auto_encoder(int(conditions[0]), conditions[1], conditions[2])
 metrics = nn.MSELoss(size_average=True)
 optimizer = optim.Adam(auto_encoder.parameters(), lr=0.002, weight_decay = 0.3) #inherited the parameters() method from nn
 
-
-
-
+for epoch in range (epochs):
+    training_loss = 0
+    num_users_who_rated = 0.0
+    
+    for i in range(total_users):
+        in_feature = train_set1[i] #create a fake dim of batchsize = 1 vector. Pytorch expects this
+        in_feature = Variable(in_feature).unsqueeze(0)
+        target = in_feature.clone() #the original input, unchanged. For loss calculation
+        
+        if torch.sum(target.data > 0) > 0: #make sure the input is not empty, ppl rate at least 1 movie
+            out_feature = auto_encoder.prop_forward(in_feature)
+            out_feature[target == 0] = 0 #unrated = can't count in loss function
+            #don't want to compute grad w/r target
+            target.require_grad = False
+            
+            loss = metrics(out_feature, target)
+            mean_correction =  total_movies/float(torch.sum(target.data > 0)+1e-20) #only select movies with ratings, make sure denom != 0
+            loss.backward() #gradient
+            training_loss += np.sqrt(loss.data[0]*mean_correction)
+            num_users_who_rated += 1.0
+            optimizer.step() 
+            #difference between backward() and step/opt: backward decides the direction of change, opt will determine the magnitude
+    print('epoch ' + str(epoch) +': ' + str(loss/num_users_who_rated))
+    #we want the loss to be less than 1, so our error is less than 1 star rating
 
 
 
