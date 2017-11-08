@@ -7,6 +7,9 @@ import torch.utils.data
 import numpy as np
 import pandas as pd
 
+import matplotlib.pyplot as plt
+
+
 #these files have no headers
 movies=pd.read_csv('ml-1m/movies.dat', sep='::', header=None, encoding='latin-1', engine='python')
 ratings=pd.read_csv('ml-1m/ratings.dat',sep='::', header=None, encoding='latin-1', engine='python')
@@ -52,7 +55,8 @@ train_set1 = torch.FloatTensor(train_set1)
 
 test_set1 = matrix_rep(test_set1, total_users, total_movies)
 test_set1 = torch.FloatTensor(test_set1)
-
+#end of processing
+#########################################################################################################
 class auto_encoder(nn.Module):
     def __init__(self, total_movies, hid1_size, hid2_size):
         super(auto_encoder, self).__init__()
@@ -73,41 +77,88 @@ class auto_encoder(nn.Module):
         vector = self.h3o(vector) #hope that the output matches the input
         return vector
 
+def training(epochs, metrics, optimizer):
+    global auto_encoder
+    accuracy = list() #store the accuracy for graph        
+    for epoch in range (epochs):
+        training_loss = 0
+        num_users_who_rated = 0.0
+        
+        for i in range(total_users):
+            in_feature = train_set1[i] #create a fake dim of batchsize = 1 vector. Pytorch expects this
+            in_feature = Variable(in_feature).unsqueeze(0)
+            target = in_feature.clone() #the original input, unchanged. For loss calculation
+            
+            if torch.sum(target.data > 0) > 0: #make sure the input is not empty, ppl rate at least 1 movie
+                out_feature = auto_encoder.prop_forward(in_feature)
+                out_feature[target == 0] = 0 #unrated = can't count in loss function
+                #don't want to compute grad w/r target
+                target.require_grad = False
+                
+                loss = metrics(out_feature, target)
+                mean_correction =  total_movies/float(torch.sum(target.data > 0)+1e-20) #only select movies with ratings, make sure denom != 0
+                loss.backward() #gradient
+                training_loss += np.sqrt(loss.data[0]*mean_correction)
+                num_users_who_rated += 1.0
+                optimizer.step() 
+                #difference between backward() and step/opt: backward decides the direction of change, opt will determine the magnitude
+        print('epoch ' + str(epoch) +': ' + str(training_loss/num_users_who_rated))
+        accuracy.append(training_loss/num_users_who_rated)
+    return accuracy
+
+#test set has the solution to the unwatched movies in the training set. Therefore we still predict the training set.
+#no need to worry about gradient/backprop as usual
+def predict(metrics):
+    global auto_encoder
+    test_loss = 0
+    counter = 0
+    
+    for i in range(total_users):
+        in_feature = train_set1[i]
+        in_feature = Variable(in_feature).unsqueeze(0)
+        target = Variable(test_set1[i])
+        
+        if torch.sum(target.data > 0) > 0:
+            result = auto_encoder.prop_forward(in_feature)
+            target.require_grad = False
+            result[target == 0] = 0
+            
+            loss = metrics(result, target)
+            mean_correction =  total_movies/float(torch.sum(target.data > 0)+1e-20)
+            test_loss += np.sqrt(loss.data[0]*mean_correction)
+            counter += 1
+        
+    print('test mean loss' +': ' + str(test_loss/counter))
+        
+        
+
+
+def graph(accuracy):
+    x = [i for i in range(len(accuracy))]
+    y = accuracy
+    plt.plot(x,y)
+    plt.ylabel("mean corrected training loss")
+    plt.xlabel("epochs")
+    plt.show()
+
+    
+        #we want the loss to be less than 1, so our error is less than 1 star rating
 '''architecture of AE defined here'''
-hid1_size = 20
-hid2_size = 10
-epochs = 100    
+hid1_size = 30
+hid2_size = 15
+epochs = 30 #testing out with 300    
 conditions = [total_movies, hid1_size, hid2_size]
 
 auto_encoder = auto_encoder(int(conditions[0]), conditions[1], conditions[2])
 
 metrics = nn.MSELoss(size_average=True)
-optimizer = optim.Adam(auto_encoder.parameters(), lr=0.002, weight_decay = 0.3) #inherited the parameters() method from nn
+optimizer = optim.Adam(auto_encoder.parameters(), lr=0.003, weight_decay = 0.2) #inherited the parameters() method from nn
 
-for epoch in range (epochs):
-    training_loss = 0
-    num_users_who_rated = 0.0
-    
-    for i in range(total_users):
-        in_feature = train_set1[i] #create a fake dim of batchsize = 1 vector. Pytorch expects this
-        in_feature = Variable(in_feature).unsqueeze(0)
-        target = in_feature.clone() #the original input, unchanged. For loss calculation
-        
-        if torch.sum(target.data > 0) > 0: #make sure the input is not empty, ppl rate at least 1 movie
-            out_feature = auto_encoder.prop_forward(in_feature)
-            out_feature[target == 0] = 0 #unrated = can't count in loss function
-            #don't want to compute grad w/r target
-            target.require_grad = False
-            
-            loss = metrics(out_feature, target)
-            mean_correction =  total_movies/float(torch.sum(target.data > 0)+1e-20) #only select movies with ratings, make sure denom != 0
-            loss.backward() #gradient
-            training_loss += np.sqrt(loss.data[0]*mean_correction)
-            num_users_who_rated += 1.0
-            optimizer.step() 
-            #difference between backward() and step/opt: backward decides the direction of change, opt will determine the magnitude
-    print('epoch ' + str(epoch) +': ' + str(training_loss/num_users_who_rated))
-    #we want the loss to be less than 1, so our error is less than 1 star rating
+train_accuracy = training(epochs, metrics, optimizer)
+
+graph = graph(train_accuracy)
+
+predict(metrics)
 
 
 

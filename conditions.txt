@@ -1,0 +1,6 @@
+condition 1:
+hid1_size = 30
+hid2_size = 15
+epochs = 300   
+activation = tanh
+optimizer = Adam
